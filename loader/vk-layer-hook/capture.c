@@ -29,6 +29,11 @@
 #include "wallpiper/vk_format.h"
 
 #include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+#include <sys/file.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -545,8 +550,57 @@ static wp_swapchain_state_t *find_swapchain_locked(wp_device_data_t *dd,
 static pthread_mutex_t g_channel_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool g_channel_in_use[WP_MAX_CAPTURE_CHANNELS];
 
+/*
+ * Wire channels are allocated from a table shared by every captured process
+ * (wallpaper64.exe and the webwallpaper64.exe GPU process both present
+ * wallpapers). With per-process numbering both started at channel 0, so the
+ * portal mixed their frames and kept a dead process's last frame on screen.
+ * The table stores the owning pid per channel; entries of dead pids are
+ * reclaimed.
+ */
+static int channel_table_fd(void) {
+  static int fd = -1;
+  if (fd >= 0) {
+    return fd;
+  }
+  const char *dir = getenv("WALLPIPER_TEMP_DIR");
+  char path[512];
+  snprintf(path, sizeof(path), "%s/wire-channels",
+           (dir && dir[0]) ? dir : "/tmp/wallpiper");
+  fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  return fd;
+}
+
 static bool alloc_wire_channel(uint32_t *out) {
   pthread_mutex_lock(&g_channel_mutex);
+  int fd = channel_table_fd();
+  if (fd >= 0 && flock(fd, LOCK_EX) == 0) {
+    int32_t pids[WP_MAX_CAPTURE_CHANNELS];
+    memset(pids, 0, sizeof(pids));
+    ssize_t got = pread(fd, pids, sizeof(pids), 0);
+    (void)got;
+    int32_t me = (int32_t)getpid();
+    bool found = false;
+    for (uint32_t i = 0; i < WP_MAX_CAPTURE_CHANNELS; i++) {
+      bool free_slot = pids[i] == 0 ||
+                       (pids[i] != me && kill(pids[i], 0) != 0 &&
+                        errno == ESRCH);
+      if (free_slot && !g_channel_in_use[i]) {
+        pids[i] = me;
+        if (pwrite(fd, pids, sizeof(pids), 0) == (ssize_t)sizeof(pids)) {
+          g_channel_in_use[i] = true;
+          *out = i;
+          found = true;
+        }
+        break;
+      }
+    }
+    flock(fd, LOCK_UN);
+    pthread_mutex_unlock(&g_channel_mutex);
+    return found;
+  }
+
+  /* No shared table: fall back to per-process numbering. */
   for (uint32_t i = 0; i < WP_MAX_CAPTURE_CHANNELS; i++) {
     if (!g_channel_in_use[i]) {
       g_channel_in_use[i] = true;
@@ -560,11 +614,24 @@ static bool alloc_wire_channel(uint32_t *out) {
 }
 
 static void free_wire_channel(uint32_t channel) {
-  if (channel < WP_MAX_CAPTURE_CHANNELS) {
-    pthread_mutex_lock(&g_channel_mutex);
-    g_channel_in_use[channel] = false;
-    pthread_mutex_unlock(&g_channel_mutex);
+  if (channel >= WP_MAX_CAPTURE_CHANNELS) {
+    return;
   }
+  pthread_mutex_lock(&g_channel_mutex);
+  g_channel_in_use[channel] = false;
+  int fd = channel_table_fd();
+  if (fd >= 0 && flock(fd, LOCK_EX) == 0) {
+    int32_t pids[WP_MAX_CAPTURE_CHANNELS];
+    memset(pids, 0, sizeof(pids));
+    if (pread(fd, pids, sizeof(pids), 0) >= 0 &&
+        pids[channel] == (int32_t)getpid()) {
+      pids[channel] = 0;
+      ssize_t put = pwrite(fd, pids, sizeof(pids), 0);
+      (void)put;
+    }
+    flock(fd, LOCK_UN);
+  }
+  pthread_mutex_unlock(&g_channel_mutex);
 }
 
 static pthread_mutex_t g_channel_geom_mutex = PTHREAD_MUTEX_INITIALIZER;
