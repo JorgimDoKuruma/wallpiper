@@ -101,3 +101,4 @@ WIN32_IMPORT(dbghelp, PVOID, ImageDirectoryEntryToData, (PVOID, BOOL, WORD, PDWO
 
 WIN32_IMPORT(kernel32, BOOL, GetModuleHandleExA, (DWORD, LPCSTR, HMODULE *))
 WIN32_IMPORT(kernel32, DWORD, FormatMessageA, (DWORD, LPCVOID, DWORD, DWORD, LPSTR, DWORD, va_list *))
+WIN32_IMPORT(user32, int, GetClassNameW, (HWND, LPWSTR, int))
