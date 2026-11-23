@@ -29,7 +29,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define WP_MAX_DEVICES 4
+/* Was 4: Wallpaper Engine keeps extra D3D11 (-> Vulkan) devices around for
+ * video playback, so after a few wallpaper switches the table filled up and
+ * every new vkCreateDevice failed with VK_ERROR_OUT_OF_HOST_MEMORY until WE
+ * was restarted. */
+#define WP_MAX_DEVICES 64
 
 static pthread_mutex_t g_device_table_mutex = PTHREAD_MUTEX_INITIALIZER;
 static wp_device_data_t *g_device_table[WP_MAX_DEVICES];
@@ -117,7 +121,13 @@ wp_device_data_t *wp_device_data_create(VkDevice device,
     g_device_table[g_device_table_count++] = data;
     inserted = true;
   }
+  size_t live = g_device_table_count;
   pthread_mutex_unlock(&g_device_table_mutex);
+
+  if (wp_capture_is_target_process()) {
+    WP_LOG("device_table: %zu live device(s)%s", live,
+           inserted ? "" : " - TABLE FULL, refusing device");
+  }
 
   if (!inserted) {
     pthread_mutex_destroy(&data->swapchains_mutex);
@@ -150,7 +160,11 @@ void wp_device_data_remove(void *dispatch_key) {
       wp_device_data_t *data = g_device_table[i];
       g_device_table[i] = g_device_table[g_device_table_count - 1];
       g_device_table_count--;
+      size_t live = g_device_table_count;
       pthread_mutex_unlock(&g_device_table_mutex);
+      if (wp_capture_is_target_process()) {
+        WP_LOG("device_table: device destroyed, %zu live", live);
+      }
 
       pthread_mutex_destroy(&data->swapchains_mutex);
       pthread_mutex_destroy(&data->queue_family_mutex);

@@ -36,4 +36,10 @@ WP_DLLEXPORT HRESULT WINAPI DwmSetWindowAttribute(HWND hwnd, DWORD attr,
 WP_DLLEXPORT BOOL WINAPI DwmDefWindowProc(HWND hwnd, UINT msg, WPARAM wparam,
                                           LPARAM lparam, LRESULT *result);
 
+WP_DLLEXPORT HRESULT WINAPI DwmExtendFrameIntoClientArea(HWND hwnd,
+                                                         const void *margins);
+WP_DLLEXPORT HRESULT WINAPI DwmGetCompositionTimingInfo(HWND hwnd,
+                                                        void *info);
+WP_DLLEXPORT HRESULT WINAPI DwmFlush(void);
+
 #endif

@@ -45,7 +45,8 @@ SRCS := \
 	dwm_exports.c \
 	waitobj.c \
 	spawn.c \
-	window_visibility.c
+	window_visibility.c \
+	ui_shadow.c
 
 .PHONY: build build-tcc clean clean-tcc
 

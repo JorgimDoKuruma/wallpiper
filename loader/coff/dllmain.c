@@ -25,6 +25,7 @@
 #include "progman.h"
 #include "util.h"
 #include "imports.h"
+#include "ui_shadow.h"
 
 #ifdef __TINYC__
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved);
@@ -44,6 +45,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
     DisableThreadLibraryCalls(inst);
     load_real_dwmapi();
     install_progman_hook();
+    install_ui_shadow_hooks();
   }
 
   return TRUE;

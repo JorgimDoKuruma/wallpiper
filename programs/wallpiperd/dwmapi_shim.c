@@ -159,6 +159,15 @@ void wp_dwmapi_shim_wire_up(void) {
     return;
   }
 
+  /* wallpaperui.exe lives in bin/ and loads dwmapi from its own directory
+   * first; the shim hides its override-redirect glow windows there. */
+  char ui_target[1210];
+  snprintf(ui_target, sizeof(ui_target), "%s/bin/dwmapi.dll", we_exe);
+  if (!install_shim(shim, ui_target)) {
+    printf("failed to install dwmapi shim next to wallpaperui.exe (%s)\n",
+           ui_target);
+  }
+
   char orig_windows[1030];
   if (!wp_to_windows_path(orig, orig_windows, sizeof(orig_windows))) {
     return;

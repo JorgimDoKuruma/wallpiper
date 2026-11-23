@@ -27,11 +27,18 @@ typedef BOOL(WINAPI *DwmIsCompositionEnabled_t)(BOOL *);
 typedef HRESULT(WINAPI *DwmGetWindowAttribute_t)(HWND, DWORD, PVOID, DWORD);
 typedef HRESULT(WINAPI *DwmSetWindowAttribute_t)(HWND, DWORD, LPCVOID, DWORD);
 typedef BOOL(WINAPI *DwmDefWindowProc_t)(HWND, UINT, WPARAM, LPARAM, LRESULT *);
+/* Also delay-imported by libcef.dll (wallpaperui.exe loads this shim too). */
+typedef HRESULT(WINAPI *DwmExtendFrameIntoClientArea_t)(HWND, const void *);
+typedef HRESULT(WINAPI *DwmGetCompositionTimingInfo_t)(HWND, void *);
+typedef HRESULT(WINAPI *DwmFlush_t)(void);
 
 static DwmIsCompositionEnabled_t real_DwmIsCompositionEnabled;
 static DwmGetWindowAttribute_t real_DwmGetWindowAttribute;
 static DwmSetWindowAttribute_t real_DwmSetWindowAttribute;
 static DwmDefWindowProc_t real_DwmDefWindowProc;
+static DwmExtendFrameIntoClientArea_t real_DwmExtendFrameIntoClientArea;
+static DwmGetCompositionTimingInfo_t real_DwmGetCompositionTimingInfo;
+static DwmFlush_t real_DwmFlush;
 
 void load_real_dwmapi(void) {
   WCHAR path[MAX_PATH];
@@ -54,6 +61,13 @@ void load_real_dwmapi(void) {
       real, "DwmSetWindowAttribute");
   real_DwmDefWindowProc =
       (DwmDefWindowProc_t)(void *)GetProcAddress(real, "DwmDefWindowProc");
+  real_DwmExtendFrameIntoClientArea =
+      (DwmExtendFrameIntoClientArea_t)(void *)GetProcAddress(
+          real, "DwmExtendFrameIntoClientArea");
+  real_DwmGetCompositionTimingInfo =
+      (DwmGetCompositionTimingInfo_t)(void *)GetProcAddress(
+          real, "DwmGetCompositionTimingInfo");
+  real_DwmFlush = (DwmFlush_t)(void *)GetProcAddress(real, "DwmFlush");
 }
 
 WP_DLLEXPORT BOOL WINAPI DwmIsCompositionEnabled(BOOL *pfEnabled) {
@@ -88,4 +102,27 @@ WP_DLLEXPORT BOOL WINAPI DwmDefWindowProc(HWND hwnd, UINT msg, WPARAM wparam,
     return real_DwmDefWindowProc(hwnd, msg, wparam, lparam, result);
   }
   return FALSE;
+}
+
+WP_DLLEXPORT HRESULT WINAPI DwmExtendFrameIntoClientArea(HWND hwnd,
+                                                         const void *margins) {
+  if (real_DwmExtendFrameIntoClientArea) {
+    return real_DwmExtendFrameIntoClientArea(hwnd, margins);
+  }
+  return E_NOTIMPL;
+}
+
+WP_DLLEXPORT HRESULT WINAPI DwmGetCompositionTimingInfo(HWND hwnd,
+                                                        void *info) {
+  if (real_DwmGetCompositionTimingInfo) {
+    return real_DwmGetCompositionTimingInfo(hwnd, info);
+  }
+  return E_NOTIMPL;
+}
+
+WP_DLLEXPORT HRESULT WINAPI DwmFlush(void) {
+  if (real_DwmFlush) {
+    return real_DwmFlush();
+  }
+  return S_OK;
 }

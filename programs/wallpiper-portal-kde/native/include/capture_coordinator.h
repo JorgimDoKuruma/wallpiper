@@ -28,6 +28,7 @@
 #include <QObject>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
@@ -79,6 +80,34 @@ private:
                 quint32 stride, quint64 modifier, bool hasGeometry,
                 qint32 geomX, qint32 geomY, int fd, int syncFd);
   void retryPendingBufs();
+  bool rebindStaleItem(uint32_t channel);
+
+  struct CachedBuf {
+    quint32 width = 0;
+    quint32 height = 0;
+    quint32 format = 0;
+    quint32 stride = 0;
+    quint64 modifier = 0;
+    bool hasGeometry = false;
+    qint32 geomX = 0;
+    qint32 geomY = 0;
+    int fd = -1;
+  };
+  void cacheBuf(quint32 slot, quint32 width, quint32 height, quint32 format,
+                quint32 stride, quint64 modifier, bool hasGeometry,
+                qint32 geomX, qint32 geomY, int fd);
+  const CachedBuf *cachedInfo(uint32_t channel) const;
+  WallpaperCaptureItem *itemForOutput(const QString &name) const;
+  WallpaperCaptureItem *preferredItemFor(quint32 width, quint32 height,
+                                         bool hasGeometry, qint32 geomX,
+                                         qint32 geomY) const;
+  bool channelIsStale(uint32_t channel,
+                      std::chrono::steady_clock::time_point now) const;
+  void bindChannel(uint32_t channel, WallpaperCaptureItem *item,
+                   std::optional<quint32> skipSlot, quint32 width,
+                   quint32 height);
+  std::optional<uint32_t> channelItemFor(WallpaperCaptureItem *item) const;
+  void evaluateMirrors();
 
   struct PendingBuf {
     quint32 width = 0;
@@ -99,6 +128,24 @@ private:
 
   std::unordered_map<quint32, PendingBuf> m_pendingBufs;
   std::unordered_set<uint32_t> m_loggedDroppedChannels;
+  // dup() of the latest buffer per slot, so a channel can be re-bound to a
+  // different screen without the capture layer re-sending its buffers.
+  std::unordered_map<quint32, CachedBuf> m_slotCache;
+
+  // Last time each wire channel delivered a frame, and last time we tried to
+  // move a screen from a silent channel onto a new one (see rebindStaleItem).
+  std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>
+      m_channelLastFrame;
+  std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>
+      m_lastRebindAttempt;
+  // When each channel last received a new set of buffers (new swapchain).
+  std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>
+      m_channelSince;
+  // Screens showing another screen's stream (clone layout): item -> channel.
+  std::unordered_map<WallpaperCaptureItem *, uint32_t> m_mirrors;
+  std::unordered_map<WallpaperCaptureItem *, std::chrono::steady_clock::time_point>
+      m_orphanSince;
+  std::chrono::steady_clock::time_point m_lastMirrorEval;
 
   CaptureSocket *m_captureSocket = nullptr;
   CtlListener *m_ctlListener = nullptr;
